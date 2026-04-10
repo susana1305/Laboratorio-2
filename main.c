@@ -8,32 +8,42 @@
 #include "esp_timer.h"
 #include "esp_random.h"
 
+// valores leds
 #define OFF 0
 #define V  1
 #define R  2
 
+// botones
 #define B1 16
 #define B2 14
 
 #define N 6
 
+// pines de la matriz
 static const int filas[N] = {13, 12, 2, 4, 15, 0};
 static const int colr[N] = {25, 27, 33, 5, 19, 22};
 static const int colv[N] = {26, 17, 32, 18, 21, 23};
 
+// matriz
 uint8_t m[N][N];
 
-int x = 2;
-bool dead = false;
-bool start = false;
+// jugador
+int jugador = 2;
 
-int vel = 70;
+// estados
+bool muerto = false;
+bool inicio = false;
+
+// velocidad
+int velo = 70;
 int t = 0;
 
-static volatile int rf = 0;
+// multiplexado
+static volatile int filac = 0;
 
 void IRAM_ATTR isr(void *arg) {
-    int ant = (rf + N - 1) % N;
+    // Apaga fila anterior
+    int ant = (filac + N - 1) % N;
     gpio_set_level(filas[ant], 0);
 
     for (int c = 0; c < N; c++) {
@@ -41,15 +51,16 @@ void IRAM_ATTR isr(void *arg) {
         gpio_set_level(colv[c], 0);
     }
 
-    int r = rf;
+    int r = filac;
 
     for (int c = 0; c < N; c++) {
+        // Lee matriz
         if (m[r][c] == V) gpio_set_level(colv[c], 1);
         if (m[r][c] == R) gpio_set_level(colr[c], 1);
     }
 
     gpio_set_level(filas[r], 1);
-    rf = (rf + 1) % N;
+    filac = (filac + 1) % N;
 }
 
 void init() {
@@ -83,19 +94,19 @@ void clr() {
 static bool b1a = false;
 static bool b2a = false;
 
-void draw() {
-    m[5][x] = R;
+void dib() {
+    m[5][jugador] = R;
 }
 
-void move(bool l, bool r) {
-    if (l && !b1a && x > 0) x--;
-    if (r && !b2a && x < 5) x++;
+void mover(bool l, bool r) {
+    if (l && !b1a && jugador > 0) jugador--;
+    if (r && !b2a && jugador < 5) jugador++;
 
     b1a = l;
     b2a = r;
 }
 
-void spawn() {
+void aparecer() {
     int c = esp_random() % 6;
     m[0][c] = V;
 
@@ -121,10 +132,10 @@ bool l() { return gpio_get_level(B1) == 0; }
 bool r() { return gpio_get_level(B2) == 0; }
 
 bool hit() {
-    return m[5][x] == V;
+    return m[5][jugador] == V;
 }
 
-void face1() {
+void Cara() {
     clr();
     m[1][1] = R;
     m[1][4] = R;
@@ -134,7 +145,7 @@ void face1() {
     m[4][3] = R;
 }
 
-void face2() {
+void X() {
     clr();
     m[0][0] = R; m[0][5] = R;
     m[1][1] = R; m[1][4] = R;
@@ -145,10 +156,10 @@ void face2() {
 }
 
 void reset() {
-    x = 2;
-    dead = false;
-    start = false;
-    vel = 45;
+    jugador = 2;
+    muerto = false;
+    inicio = false;
+    velo = 45;
     t = 0;
     clr();
 }
@@ -157,7 +168,7 @@ void loop(void *arg) {
 
     while (1) {
 
-        if (!start) {
+        if (!inicio) {
             face1();
             vTaskDelay(pdMS_TO_TICKS(2000));
 
@@ -165,29 +176,29 @@ void loop(void *arg) {
             draw();
             vTaskDelay(pdMS_TO_TICKS(1000));
 
-            start = true;
+            inicio = true;
         }
 
-        else if (!dead) {
+        else if (!muerto) {
 
             bool iz = l();
             bool de = r();
 
             t++;
 
-            if (t >= vel) {
+            if (t >= velo) {
                 t = 0;
 
                 fall();
                 spawn();
 
-                if (vel > 8) vel--;
+                if (velo > 8) velo--;
             }
 
             move(iz, de);
 
             if (hit()) {
-                dead = true;
+                muerto = true;
             }
 
             for (int c = 0; c < 6; c++)
@@ -215,11 +226,11 @@ void app_main() {
     esp_timer_handle_t tim;
     esp_timer_create_args_t a = {
         .callback = isr,
-        .name = "x"
+        .name = "display"
     };
 
     esp_timer_create(&a, &tim);
     esp_timer_start_periodic(tim, 2000);
 
-    xTaskCreate(loop, "l", 4096, NULL, 5, NULL);
+    xTaskCreate(loop, "juego", 4096, NULL, 5, NULL);
 }
